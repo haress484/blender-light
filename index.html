@@ -1,0 +1,777 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Куб из развёртки — Cube Texture Tool</title>
+<style>
+  :root { --bg:#0f1117; --panel:#151822; --card:#1b1f2c; --line:#2a3043; --text:#e8eaf0; --muted:#9aa3b8; --accent:#7c5cff; --accent2:#5a3fe0; }
+  * { box-sizing:border-box; }
+  html, body { margin:0; background:var(--bg); color:var(--text); font-family:system-ui,-apple-system,"Segoe UI",Roboto,Arial,sans-serif; }
+  body { -webkit-text-size-adjust:100%; }
+
+  .app { display:grid; grid-template-columns:400px 1fr; height:100vh; height:100dvh; }
+  .panel { overflow-y:auto; padding:16px; background:var(--panel); border-right:1px solid var(--line); }
+  .viewer { position:relative; min-height:0; background:#14161d; }
+  #gl { position:absolute; inset:0; width:100%; height:100%; display:block; touch-action:none; }
+
+  h1 { font-size:18px; margin:0 0 4px; }
+  .sub { font-size:13px; color:var(--muted); margin:0 0 14px; line-height:1.4; }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:12px; margin-bottom:12px; }
+  h2 { font-size:12px; text-transform:uppercase; letter-spacing:.07em; color:var(--muted); margin:0 0 10px; }
+
+  .drop { display:flex; flex-direction:column; align-items:center; justify-content:center; gap:4px; min-height:90px;
+          border:2px dashed #3a4157; border-radius:12px; padding:14px; text-align:center; cursor:pointer; font-size:14px; }
+  .drop.over { border-color:var(--accent); background:#1d2030; }
+  .drop b { color:#c9bcff; }
+  .drop small { color:var(--muted); }
+  .drop input { display:none; }
+
+  button { font:inherit; font-size:15px; font-weight:600; color:#fff; background:#2c3248; border:1px solid #3a4157; border-radius:10px;
+           min-height:44px; padding:8px 12px; cursor:pointer; }
+  button:active { transform:translateY(1px); }
+  button.primary { background:var(--accent); border-color:var(--accent); width:100%; font-size:16px; min-height:50px; }
+  button.primary:active { background:var(--accent2); }
+  .btns { display:flex; flex-wrap:wrap; gap:8px; margin-top:10px; }
+  .btns > button { flex:1 1 auto; }
+
+  select, input[type=number], input[type=text] { width:100%; min-height:44px; background:var(--bg); color:var(--text); border:1px solid #333a4d;
+           border-radius:8px; padding:8px 10px; font-size:16px; }
+  input[type=range] { width:100%; min-height:30px; accent-color:var(--accent); }
+  label.chk { display:flex; align-items:center; gap:10px; min-height:40px; font-size:14px; }
+  input[type=checkbox] { width:20px; height:20px; accent-color:var(--accent); }
+
+  .row { display:grid; grid-template-columns:84px 1fr 84px; gap:8px; align-items:center; margin:6px 0; font-size:14px; }
+  .row.two { grid-template-columns:84px 1fr; }
+  .grid2 { display:grid; grid-template-columns:1fr 1fr; gap:8px; }
+  .grid3 { display:grid; grid-template-columns:repeat(3,1fr); gap:8px; }
+  .lbl { font-size:12px; color:var(--muted); margin:6px 0 3px; display:block; }
+
+  #cut { width:100%; display:block; border-radius:8px; background:#0b0d12; margin:10px 0 6px;
+         touch-action:none; user-select:none; -webkit-user-select:none; cursor:grab; }
+  #cut.dragging { cursor:grabbing; }
+  .info { font-size:12px; color:var(--muted); line-height:1.45; }
+  .chips { display:flex; flex-wrap:wrap; gap:8px; margin-top:8px; }
+  .chips button { min-height:38px; font-size:13px; padding:6px 10px; }
+  details summary { cursor:pointer; font-size:14px; padding:8px 0; color:#c9bcff; }
+
+  .vbtns { position:absolute; top:10px; right:10px; display:flex; gap:8px; z-index:3; }
+  .vbtns button { min-height:40px; padding:6px 12px; background:rgba(21,24,34,.85); backdrop-filter:blur(4px); font-size:13px; }
+  .vinfo { position:absolute; left:10px; bottom:10px; z-index:3; font-size:12px; color:#cfd4e4; background:rgba(21,24,34,.8);
+           padding:6px 10px; border-radius:8px; pointer-events:none; max-width:calc(100% - 20px); }
+  #status { font-size:13px; margin-top:10px; line-height:1.4; color:#8fe08f; min-height:18px; }
+  #status.err { color:#ff8a8a; }
+
+  @media (max-width: 860px) {
+    .app { display:flex; flex-direction:column; height:auto; min-height:100vh; min-height:100dvh; }
+    .viewer { order:-1; position:sticky; top:0; z-index:20; height:46vh; height:46dvh; min-height:240px; border-bottom:1px solid var(--line); }
+    .panel { overflow:visible; border-right:0; padding:14px 12px calc(28px + env(safe-area-inset-bottom)); }
+    .row { grid-template-columns:72px 1fr 78px; }
+  }
+</style>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/exporters/GLTFExporter.js"></script>
+</head>
+<body>
+<div class="app">
+
+  <aside class="panel">
+    <h1>Куб из развёртки</h1>
+    <p class="sub">Загрузите картинку-развёртку, и она ляжет на куб. Нажимайте на грань на схеме ниже и перетаскивайте её в нужное место картинки.</p>
+
+    <section class="card">
+      <h2>1. Картинка-развёртка</h2>
+      <label class="drop" id="drop">
+        <input type="file" id="file" accept="image/*">
+        <b>Нажмите, чтобы выбрать фото</b>
+        <small>или перетащите файл сюда (PNG, JPG, WebP)</small>
+      </label>
+      <div class="btns">
+        <button id="btn-test">Тестовая развёртка</button>
+        <button id="btn-template">Скачать шаблон PNG</button>
+      </div>
+      <div class="info" id="imginfo" style="margin-top:8px">Сейчас показана тестовая развёртка.</div>
+      <div class="info" style="margin-top:4px">🔒 Загруженная картинка не сохраняется в галерею или на диск — живёт только в памяти вкладки.</div>
+    </section>
+
+    <section class="card">
+      <h2>2. Раскладка и обрезка</h2>
+      <span class="lbl">Как расположены грани на картинке (шаблон)</span>
+      <select id="layout"></select>
+      <canvas id="cut" width="600" height="400"></canvas>
+      <div class="info">💡 Нажми на грань и перетащи её на нужную область картинки. Пунктирная сетка — шаблон раскладки, можно игнорировать.</div>
+      <div class="btns">
+        <button id="btn-auto">Автоопределение</button>
+        <button id="btn-whole">По сетке (сброс)</button>
+      </div>
+      <div class="row"><span>Ширина грани</span><input type="range" id="r-cw" min="1" max="100" step="1" value="215"><input type="number" id="n-cw" inputmode="decimal" step="1" value="215"></div>
+      <div class="row"><span>Высота грани</span><input type="range" id="r-ch" min="1" max="100" step="1" value="215"><input type="number" id="n-ch" inputmode="decimal" step="1" value="215"></div>
+      <div class="row"><span>Отступ внутрь</span><input type="range" id="r-in" min="0" max="30" step="0.5" value="0"><input type="number" id="n-in" inputmode="decimal" step="0.5" value="0"></div>
+      <label class="chk"><input type="checkbox" id="sq"> Квадратные грани (высота = ширине)</label>
+      <label class="chk"><input type="checkbox" id="grid" checked> Показывать сетку-шаблон</label>
+      <details>
+        <summary>Повернуть отдельные грани</summary>
+        <div class="grid3" id="rots"></div>
+        <div class="info" style="margin-top:6px">Если рисунок на какой-то грани лёг боком или вверх ногами — поверните её здесь.</div>
+      </details>
+    </section>
+
+    <section class="card">
+      <h2>3. Размеры куба</h2>
+      <span class="lbl">Единицы измерения</span>
+      <select id="unit">
+        <option value="m">метры (м)</option>
+        <option value="cm">сантиметры (см)</option>
+        <option value="mm">миллиметры (мм)</option>
+      </select>
+      <div class="row"><span>Ширина X</span><input type="range" id="r-w" step="0.01"><input type="number" id="n-w" inputmode="decimal" step="any"></div>
+      <div class="row"><span>Высота Y</span><input type="range" id="r-h" step="0.01"><input type="number" id="n-h" inputmode="decimal" step="any"></div>
+      <div class="row"><span>Глубина Z</span><input type="range" id="r-d" step="0.01"><input type="number" id="n-d" inputmode="decimal" step="any"></div>
+      <label class="chk"><input type="checkbox" id="lock"> Равные стороны (настоящий куб)</label>
+      <div class="chips" id="presets"></div>
+      <span class="lbl" style="margin-top:10px">Точка отсчёта модели (pivot)</span>
+      <select id="pivot">
+        <option value="center">По центру куба</option>
+        <option value="bottom">На нижней грани (стоит на нуле)</option>
+      </select>
+    </section>
+
+    <section class="card">
+      <h2>4. Вид и материал</h2>
+      <label class="chk"><input type="checkbox" id="pixel" checked> Чёткие пиксели (без сглаживания)</label>
+      <label class="chk"><input type="checkbox" id="unlit"> Без освещения (цвета как на картинке)</label>
+      <label class="chk"><input type="checkbox" id="alpha"> Вырезать прозрачные места PNG</label>
+      <span class="lbl">Фон просмотра</span>
+      <select id="bg">
+        <option value="#14161d">Тёмный</option>
+        <option value="#4a5060">Серый</option>
+        <option value="#d9dce5">Светлый</option>
+        <option value="#000000">Чёрный</option>
+      </select>
+    </section>
+
+    <section class="card">
+      <h2>5. Скачать</h2>
+      <span class="lbl">Имя файла</span>
+      <input type="text" id="fname" value="cube" maxlength="40" autocapitalize="off" autocomplete="off" spellcheck="false">
+      <div style="height:10px"></div>
+      <button class="primary" id="btn-glb">Скачать .GLB (с текстурой)</button>
+      <div id="status"></div>
+      <div class="info" style="margin-top:8px">Текстура запакована внутри GLB. Открывается в Blender (File → Import → glTF 2.0), Windows 3D Viewer, Godot, Unity, Three.js и других просмотрщиках.</div>
+    </section>
+  </aside>
+
+  <main class="viewer" id="viewer">
+    <canvas id="gl"></canvas>
+    <div class="vbtns">
+      <button id="btn-spin">Вращение: выкл</button>
+      <button id="btn-reset">Сброс вида</button>
+    </div>
+    <div class="vinfo" id="vinfo"></div>
+  </main>
+</div>
+
+<script>
+const $ = id => document.getElementById(id);
+
+/* ====================== РАСКЛАДКИ РАЗВЁРТКИ ====================== */
+const LAYOUTS = {
+  cross4x3: { name: "Крест 4×3 (как на фото: верх сверху, лево-перед-право-зад в ряд, низ снизу)", cols: 4, rows: 3, back180: false,
+              cells: { top:[1,0], left:[0,1], front:[1,1], right:[2,1], back:[3,1], bottom:[1,2] } },
+  cross3x4: { name: "Крест 3×4 (вертикальный, зад под низом)", cols: 3, rows: 4, back180: true,
+              cells: { top:[1,0], left:[0,1], front:[1,1], right:[2,1], bottom:[1,2], back:[1,3] } },
+  strip6x1: { name: "Лента 6×1 (перед, право, зад, лево, верх, низ)", cols: 6, rows: 1, back180: false,
+              cells: { front:[0,0], right:[1,0], back:[2,0], left:[3,0], top:[4,0], bottom:[5,0] } }
+};
+const FACES = ["front", "right", "back", "left", "top", "bottom"];
+const FACE_RU = { front:"Перед", right:"Право", back:"Зад", left:"Лево", top:"Верх", bottom:"Низ" };
+const FACE_COL = { front:"#51cf66", right:"#da77f2", back:"#ff6b6b", left:"#4dabf7", top:"#ffd43b", bottom:"#ff922b" };
+
+/* углы грани снаружи: [ЛН, ПН, ПВ, ЛВ] */
+function faceCorners(face, hw, hh, hd, back180){
+  switch (face){
+    case "front":  return { n:[0,0,1],  c:[[-hw,-hh,hd],[hw,-hh,hd],[hw,hh,hd],[-hw,hh,hd]] };
+    case "right":  return { n:[1,0,0],  c:[[hw,-hh,hd],[hw,-hh,-hd],[hw,hh,-hd],[hw,hh,hd]] };
+    case "back":   return back180
+                     ? { n:[0,0,-1], c:[[-hw,hh,-hd],[hw,hh,-hd],[hw,-hh,-hd],[-hw,-hh,-hd]] }
+                     : { n:[0,0,-1], c:[[hw,-hh,-hd],[-hw,-hh,-hd],[-hw,hh,-hd],[hw,hh,-hd]] };
+    case "left":   return { n:[-1,0,0], c:[[-hw,-hh,-hd],[-hw,-hh,hd],[-hw,hh,hd],[-hw,hh,-hd]] };
+    case "top":    return { n:[0,1,0],  c:[[-hw,hh,hd],[hw,hh,hd],[hw,hh,-hd],[-hw,hh,-hd]] };
+    case "bottom": return { n:[0,-1,0], c:[[-hw,-hh,-hd],[hw,-hh,-hd],[hw,-hh,hd],[-hw,-hh,hd]] };
+  }
+}
+
+/* автоопределение области развёртки по цвету фона в углах */
+function detectBox(d, sw, sh){
+  const at = (x, y) => (y * sw + x) * 4;
+  const corners = [at(0,0), at(sw-1,0), at(0,sh-1), at(sw-1,sh-1)];
+  const bg = [d[corners[0]], d[corners[0]+1], d[corners[0]+2], d[corners[0]+3]];
+  const diff = i => Math.abs(d[i]-bg[0]) + Math.abs(d[i+1]-bg[1]) + Math.abs(d[i+2]-bg[2]) + Math.abs(d[i+3]-bg[3]);
+  for (let k = 0; k < 4; k++) if (diff(corners[k]) > 24) return null;
+  const col = new Uint32Array(sw), row = new Uint32Array(sh);
+  for (let y = 0; y < sh; y++){
+    for (let x = 0; x < sw; x++){
+      if (diff(at(x, y)) > 60){ col[x]++; row[y]++; }
+    }
+  }
+  const tx = 0.06 * sh, ty = 0.06 * sw;
+  let x0 = 0, x1 = sw - 1, y0 = 0, y1 = sh - 1;
+  while (x0 < sw && col[x0] <= tx) x0++;
+  while (x1 > x0 && col[x1] <= tx) x1--;
+  while (y0 < sh && row[y0] <= ty) y0++;
+  while (y1 > y0 && row[y1] <= ty) y1--;
+  if (x1 - x0 < 10 || y1 - y0 < 10) return null;
+  return { x0: x0, y0: y0, x1: x1 + 1, y1: y1 + 1 };
+}
+
+/* ====================== СОСТОЯНИЕ ====================== */
+const UNIT_M = { m: 1, cm: 0.01, mm: 0.001 };
+const S = {
+  src: null, imgW: 1024, imgH: 768, isTest: true, canvas: null, tex: null,
+  layout: "cross4x3",
+  facePos: null,             // { front:[x,y], ... } — верхний левый угол каждой грани в px картинки
+  cw: 215, ch: 215, inset: 0, square: false,   // размеры грани по умолчанию
+  showGrid: true,
+  activeFace: null,
+  dragging: null,
+  rot: { front:0, right:0, back:0, left:0, top:0, bottom:0 },
+  unit: "m", W: 1, H: 1, D: 1, lock: false, pivot: "center",
+  pixel: true, unlit: false, alpha: false
+};
+let renderer, scene, camera, controls, holder, mesh, mat;
+
+function setStatus(t, err){ const s = $("status"); s.textContent = t || ""; s.className = err ? "err" : ""; }
+
+/* ====================== ПОЗИЦИИ ГРАНЕЙ ====================== */
+function initFacePos(ox = 0, oy = 0){
+  const L = LAYOUTS[S.layout];
+  S.facePos = {};
+  FACES.forEach(f => {
+    const cell = L.cells[f];
+    S.facePos[f] = [ ox + cell[0] * S.cw, oy + cell[1] * S.ch ];
+  });
+}
+// Расставить грани по сетке с ТЕКУЩИМ размером cw×ch, начало в (0,0)
+function resetGrid(){ initFacePos(0, 0); }
+
+/* ====================== ТЕСТОВАЯ РАЗВЁРТКА ====================== */
+function makeTestCanvas(layoutKey){
+  const L = LAYOUTS[layoutKey], cs = 256;
+  const c = document.createElement("canvas"); c.width = L.cols * cs; c.height = L.rows * cs;
+  const g = c.getContext("2d");
+  g.fillStyle = "#262a36"; g.fillRect(0, 0, c.width, c.height);
+  const RU = FACE_RU, EN = { front:"FRONT", right:"RIGHT", back:"BACK", left:"LEFT", top:"TOP", bottom:"BOTTOM" };
+  Object.keys(L.cells).forEach(f => {
+    const x = L.cells[f][0] * cs, y = L.cells[f][1] * cs;
+    g.fillStyle = FACE_COL[f]; g.globalAlpha = 0.28; g.fillRect(x, y, cs, cs); g.globalAlpha = 1;
+    g.strokeStyle = "rgba(255,255,255,.12)"; g.lineWidth = 1;
+    for (let i = 1; i < 8; i++){
+      g.beginPath(); g.moveTo(x + i*cs/8, y); g.lineTo(x + i*cs/8, y + cs); g.stroke();
+      g.beginPath(); g.moveTo(x, y + i*cs/8); g.lineTo(x + cs, y + i*cs/8); g.stroke();
+    }
+    g.strokeStyle = FACE_COL[f]; g.lineWidth = 6; g.strokeRect(x + 3, y + 3, cs - 6, cs - 6);
+    g.fillStyle = "#fff"; g.textAlign = "center"; g.textBaseline = "middle";
+    g.font = "bold 44px system-ui,Arial"; g.fillText(RU[f].toUpperCase(), x + cs/2, y + cs/2 - 6);
+    g.font = "bold 22px system-ui,Arial"; g.fillStyle = "rgba(255,255,255,.75)"; g.fillText(EN[f], x + cs/2, y + cs/2 + 34);
+    g.fillStyle = FACE_COL[f];
+    g.beginPath(); g.moveTo(x + cs/2, y + 18); g.lineTo(x + cs/2 + 16, y + 48); g.lineTo(x + cs/2 - 16, y + 48); g.closePath(); g.fill();
+  });
+  return c;
+}
+
+/* ====================== ЗАГРУЗКА КАРТИНКИ ====================== */
+// Приватность: читаем файл в data-URL (только память JS). Без blob-URL и временных файлов на диске.
+function setSource(src, w, h, isTest, label){
+  if (S.tex) { S.tex.dispose(); S.tex = null; }
+  S.canvas = null;
+
+  S.src = src; S.imgW = w; S.imgH = h; S.isTest = isTest;
+  const sc = Math.min(1, 4096 / Math.max(w, h));
+  const c = document.createElement("canvas"); c.width = Math.max(1, Math.round(w * sc)); c.height = Math.max(1, Math.round(h * sc));
+  const g = c.getContext("2d"); g.imageSmoothingEnabled = !S.pixel; g.drawImage(src, 0, 0, c.width, c.height);
+  S.canvas = c;
+  $("imginfo").textContent = label + " (" + w + "×" + h + " px)";
+  setCutRanges();
+  // защита: грань не может быть больше самой картинки
+  S.cw = Math.min(S.cw, S.imgW); S.ch = Math.min(S.ch, S.imgH);
+  if (isTest) wholeImage(); else if (!autoDetect()) resetGrid();
+  makeTexture(); makeMaterial(); updateGeometry(); drawCut(); syncCutUI();
+}
+
+function loadFile(file){
+  if (!file || !/^image\//.test(file.type)) { setStatus("Выберите файл-картинку (PNG, JPG, WebP).", true); return; }
+  const reader = new FileReader();
+  reader.onload = () => {
+    const img = new Image();
+    img.onload = () => {
+      setSource(img, img.naturalWidth, img.naturalHeight, false, "Загружено: " + file.name);
+      setStatus("Картинка загружена. Нажимайте на грани на схеме и перетаскивайте.");
+    };
+    img.onerror = () => setStatus("Не удалось открыть картинку.", true);
+    img.src = reader.result;      // data-URL: только память, без blob и временных файлов
+  };
+  reader.onerror = () => setStatus("Не удалось прочитать файл.", true);
+  reader.readAsDataURL(file);
+}
+
+function useTest(){
+  const c = makeTestCanvas(S.layout);
+  setSource(c, c.width, c.height, true, "Тестовая развёртка");
+}
+
+/* ====================== ОБРЕЗКА ====================== */
+// Подгон размера под всю картинку — используется ТОЛЬКО для тестовой развёртки
+function wholeImage(){
+  const L = LAYOUTS[S.layout];
+  S.cw = S.imgW / L.cols;
+  S.ch = S.imgH / L.rows;
+  if (S.square) S.ch = S.cw;
+  initFacePos(0, 0);
+}
+
+// Автоопределение НАЧАЛА развёртки (offset). Размер cw×ch НЕ меняет.
+function autoDetect(){
+  if (!S.src) return false;
+  const sc = Math.min(1, 700 / Math.max(S.imgW, S.imgH));
+  const sw = Math.max(1, Math.round(S.imgW * sc)), sh = Math.max(1, Math.round(S.imgH * sc));
+  const c = document.createElement("canvas"); c.width = sw; c.height = sh;
+  const g = c.getContext("2d", { willReadFrequently: true }); g.drawImage(S.src, 0, 0, sw, sh);
+  let box = null;
+  try { box = detectBox(g.getImageData(0, 0, sw, sh).data, sw, sh); } catch (e) { box = null; }
+  if (!box) return false;
+  initFacePos(Math.round(box.x0 / sc), Math.round(box.y0 / sc));
+  return true;
+}
+
+/* ====================== ТЕКСТУРА / МАТЕРИАЛ ====================== */
+function makeTexture(){
+  if (!S.canvas) return;
+  if (S.tex) S.tex.dispose();
+  const c = document.createElement("canvas"); c.width = S.canvas.width; c.height = S.canvas.height;
+  const g = c.getContext("2d"); g.drawImage(S.canvas, 0, 0);
+  const t = new THREE.CanvasTexture(c);
+  t.encoding = THREE.sRGBEncoding;
+  t.wrapS = t.wrapT = THREE.ClampToEdgeWrapping;
+  if (S.pixel){ t.magFilter = THREE.NearestFilter; t.minFilter = THREE.NearestFilter; t.generateMipmaps = false; }
+  else { t.magFilter = THREE.LinearFilter; t.minFilter = THREE.LinearMipmapLinearFilter; t.generateMipmaps = true;
+         t.anisotropy = renderer ? Math.min(8, renderer.capabilities.getMaxAnisotropy()) : 1; }
+  t.needsUpdate = true;
+  S.tex = t;
+}
+function makeMaterial(){
+  if (!S.tex) return;
+  const old = mat;
+  const opts = { map: S.tex, alphaTest: S.alpha ? 0.5 : 0 };
+  mat = S.unlit ? new THREE.MeshBasicMaterial(opts)
+                : new THREE.MeshStandardMaterial(Object.assign({ roughness: 0.9, metalness: 0 }, opts));
+  mat.name = "CubeMaterial";
+  if (mesh) mesh.material = mat;
+  if (old) old.dispose();
+}
+
+/* ====================== ГЕОМЕТРИЯ КУБА ====================== */
+function sizesMeters(){ const m = UNIT_M[S.unit]; return { w: S.W * m, h: S.H * m, d: S.D * m }; }
+
+function buildGeometry(){
+  const z = sizesMeters(), hw = z.w / 2, hh = z.h / 2, hd = z.d / 2;
+  const L = LAYOUTS[S.layout], yoff = S.pivot === "bottom" ? hh : 0;
+  const pos = [], nor = [], uv = [], idx = [];
+  FACES.forEach((f, fi) => {
+    const fc = faceCorners(f, hw, hh, hd, L.back180);
+    const p0 = S.facePos[f] || [0, 0];
+    const x0 = p0[0] + S.inset, y0 = p0[1] + S.inset;
+    const x1 = p0[0] + S.cw - S.inset, y1 = p0[1] + S.ch - S.inset;
+    const ic = [[x0, y1], [x1, y1], [x1, y0], [x0, y0]];
+    const r = ((S.rot[f] || 0) / 90) | 0;
+    for (let i = 0; i < 4; i++){
+      const c = fc.c[i], p = ic[(i + r) % 4];
+      pos.push(c[0], c[1] + yoff, c[2]);
+      nor.push(fc.n[0], fc.n[1], fc.n[2]);
+      uv.push(p[0] / S.imgW, 1 - p[1] / S.imgH);
+    }
+    idx.push(fi*4, fi*4+1, fi*4+2, fi*4, fi*4+2, fi*4+3);
+  });
+  const g = new THREE.BufferGeometry();
+  g.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3));
+  g.setAttribute("normal", new THREE.Float32BufferAttribute(nor, 3));
+  g.setAttribute("uv", new THREE.Float32BufferAttribute(uv, 2));
+  g.setIndex(idx);
+  return g;
+}
+
+function updateGeometry(){
+  if (!mesh) return;
+  const old = mesh.geometry; mesh.geometry = buildGeometry(); if (old) old.dispose();
+  const z = sizesMeters(), mx = Math.max(z.w, z.h, z.d, 1e-6), s = 2 / mx;
+  holder.scale.setScalar(s);
+  holder.position.set(0, S.pivot === "bottom" ? -z.h * s / 2 : 0, 0);
+  const f = v => (v >= 1 ? v.toFixed(2) : v.toFixed(3));
+  $("vinfo").textContent = "В файле: " + f(z.w) + " × " + f(z.h) + " × " + f(z.d) + " м (Ш × В × Г)";
+}
+
+/* ====================== СХЕМА ОБРЕЗКИ ====================== */
+function cutMetrics(){
+  const sc = Math.min(720 / S.imgW, 540 / S.imgH);
+  return { sc, w: Math.max(1, Math.round(S.imgW * sc)), h: Math.max(1, Math.round(S.imgH * sc)) };
+}
+
+function drawCut(){
+  const c = $("cut"), ctx = c.getContext("2d");
+  if (!S.src) return;
+  const { sc, w, h } = cutMetrics();
+  c.width = w; c.height = h;
+  ctx.fillStyle = "#0b0d12"; ctx.fillRect(0, 0, w, h);
+  ctx.drawImage(S.src, 0, 0, w, h);
+
+  if (S.showGrid){
+    const L = LAYOUTS[S.layout];
+    ctx.save();
+    ctx.setLineDash([4, 4]);
+    ctx.strokeStyle = "rgba(255,255,255,.18)";
+    ctx.lineWidth = 1;
+    for (let i = 1; i < L.cols; i++){
+      const x = i * S.cw * sc;
+      ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, h); ctx.stroke();
+    }
+    for (let j = 1; j < L.rows; j++){
+      const y = j * S.ch * sc;
+      ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(w, y); ctx.stroke();
+    }
+    ctx.restore();
+  }
+
+  const drawFace = (f, highlight) => {
+    const p0 = S.facePos[f];
+    if (!p0) return;
+    const x = p0[0] * sc, y = p0[1] * sc, fw = S.cw * sc, fh = S.ch * sc;
+    const isActive = highlight || S.activeFace === f;
+    const dim = S.dragging && S.dragging.face !== f;
+    ctx.fillStyle = FACE_COL[f];
+    ctx.globalAlpha = dim ? 0.06 : (isActive ? 0.35 : 0.16);
+    ctx.fillRect(x, y, fw, fh);
+    ctx.globalAlpha = 1;
+    ctx.strokeStyle = FACE_COL[f];
+    ctx.lineWidth = isActive ? Math.max(3, c.width / 150) : Math.max(1.5, c.width / 400);
+    ctx.strokeRect(x, y, fw, fh);
+
+    const fontSize = Math.max(10, Math.min(22, Math.min(fw, fh) * 0.22));
+    ctx.font = "bold " + fontSize + "px system-ui,Arial";
+    ctx.textAlign = "center"; ctx.textBaseline = "middle";
+    ctx.fillStyle = "#fff";
+    ctx.strokeStyle = "rgba(0,0,0,.85)"; ctx.lineWidth = Math.max(2, fontSize * 0.15);
+    ctx.strokeText(FACE_RU[f], x + fw/2, y + fh/2);
+    ctx.fillText(FACE_RU[f], x + fw/2, y + fh/2);
+
+    if (isActive){
+      const fs = Math.max(10, fontSize * 0.7);
+      ctx.font = "600 " + fs + "px system-ui,Arial";
+      const coords = Math.round(p0[0]) + ", " + Math.round(p0[1]);
+      ctx.strokeStyle = "rgba(0,0,0,.85)"; ctx.lineWidth = Math.max(2, fs * 0.15);
+      const ty = Math.max(fs + 4, y + fh + fs + 4);
+      const tx = Math.min(Math.max(x + fw / 2, 30), w - 30);
+      ctx.strokeText(coords, tx, ty);
+      ctx.fillText(coords, tx, ty);
+    }
+  };
+  FACES.forEach(f => { if (f !== S.activeFace) drawFace(f, false); });
+  if (S.activeFace) drawFace(S.activeFace, true);
+}
+
+/* ====================== DRAG-N-DROP (POINTER EVENTS) ====================== */
+// Перевод координат события из CSS-пикселей в канвасные:
+// #cut растянут через width:100%, поэтому c.width !== rect.width.
+function getCanvasCoords(e){
+  const c = $("cut");
+  const rect = c.getBoundingClientRect();
+  const scaleX = c.width / rect.width;
+  const scaleY = c.height / rect.height;
+  return {
+    x: (e.clientX - rect.left) * scaleX,
+    y: (e.clientY - rect.top) * scaleY
+  };
+}
+
+// Грань под точкой (канвасные координаты). +15 px вокруг — зона для пальцев.
+function hitTest(px, py){
+  const HIT_PAD = 15;
+  const { sc } = cutMetrics();
+  let hit = null;
+  FACES.forEach(f => {
+    const p0 = S.facePos[f];
+    if (!p0) return;
+    const x = p0[0] * sc - HIT_PAD;
+    const y = p0[1] * sc - HIT_PAD;
+    const w = S.cw * sc + HIT_PAD * 2;
+    const h = S.ch * sc + HIT_PAD * 2;
+    if (px >= x && px <= x + w && py >= y && py <= y + h){
+      hit = f;
+    }
+  });
+  return hit;
+}
+
+function onPointerDown(e){
+  e.preventDefault();
+  // принудительный сброс зависшего драга (если pointerup не дошёл)
+  if (S.dragging){
+    S.dragging = null;
+    $("cut").classList.remove("dragging");
+  }
+
+  const c = $("cut");
+  const { x: px, y: py } = getCanvasCoords(e);
+  const face = hitTest(px, py);
+  if (!face) return;
+
+  try { c.setPointerCapture(e.pointerId); } catch (_) {}
+
+  const { sc } = cutMetrics();
+  S.dragging = {
+    face,
+    offX: px - S.facePos[face][0] * sc,
+    offY: py - S.facePos[face][1] * sc,
+    pointerId: e.pointerId
+  };
+  S.activeFace = face;
+  c.classList.add("dragging");
+  drawCut();
+}
+
+function onPointerMove(e){
+  // Пока идёт драг — двигается ТОЛЬКО одна захваченная грань
+  if (!S.dragging) return;
+  e.preventDefault();
+  const { x: px, y: py } = getCanvasCoords(e);
+  const { sc } = cutMetrics();
+
+  let newX = (px - S.dragging.offX) / sc;
+  let newY = (py - S.dragging.offY) / sc;
+  newX = Math.max(0, Math.min(S.imgW - S.cw, newX));
+  newY = Math.max(0, Math.min(S.imgH - S.ch, newY));
+  S.facePos[S.dragging.face] = [newX, newY];
+  updateGeometry();
+  drawCut();
+}
+
+function onPointerUp(e){
+  if (!S.dragging) return;
+  if (e && e.pointerId !== undefined && e.pointerId !== S.dragging.pointerId) return;
+  const c = $("cut");
+  try { c.releasePointerCapture(S.dragging.pointerId); } catch (_) {}
+  setStatus("Позиция грани «" + FACE_RU[S.dragging.face] + "» изменена.");
+  S.dragging = null;
+  c.classList.remove("dragging");
+  drawCut();
+}
+
+function setupCutEvents(){
+  const c = $("cut");
+  c.addEventListener("pointerdown", onPointerDown);
+  c.addEventListener("pointermove", onPointerMove);
+  c.addEventListener("pointerup", onPointerUp);
+  c.addEventListener("pointercancel", onPointerUp);
+  c.addEventListener("contextmenu", e => e.preventDefault());
+  // страховка: pointerup вне канваса (палец ушёл за экран)
+  window.addEventListener("pointerup", onPointerUp);
+  window.addEventListener("pointercancel", onPointerUp);
+}
+
+/* ====================== ПОЛЯ ВВОДА ====================== */
+function setCutRanges(){
+  $("r-cw").min = 1; $("r-cw").max = Math.ceil(S.imgW);
+  $("r-ch").min = 1; $("r-ch").max = Math.ceil(S.imgH);
+}
+function syncCutUI(){
+  [["cw", S.cw], ["ch", S.ch], ["in", S.inset]].forEach(p => {
+    $("r-" + p[0]).value = p[1]; $("n-" + p[0]).value = p[1];
+  });
+  $("sq").checked = S.square;
+  $("grid").checked = S.showGrid;
+}
+
+function bindCut(key, id){
+  const r = $("r-" + id), n = $("n-" + id);
+  const apply = v => {
+    if (!isFinite(v) || v <= 0) return;
+    if (key === "cw" && S.square) { S.cw = v; S.ch = v; }
+    else if (key === "ch" && S.square) { S.ch = v; S.cw = v; }
+    else S[key] = v;
+    if (S.square) {
+      $("r-cw").value = $("n-cw").value = S.cw;
+      $("r-ch").value = $("n-ch").value = S.ch;
+    }
+    updateGeometry();
+    drawCut();
+  };
+  r.addEventListener("input", () => { n.value = r.value; apply(parseFloat(r.value)); });
+  n.addEventListener("input", () => { const v = parseFloat(n.value); if (isFinite(v)){ r.value = v; apply(v); } });
+}
+
+/* размеры куба */
+function rangeBounds(){
+  const b = { m: [0.01, 10, 0.01], cm: [0.5, 500, 0.5], mm: [1, 5000, 1] }[S.unit];
+  ["w", "h", "d"].forEach(k => { const r = $("r-" + k); r.min = b[0]; r.max = b[1]; r.step = b[2]; });
+}
+function syncSizeUI(){
+  [["w", S.W], ["h", S.H], ["d", S.D]].forEach(p => {
+    const v = Math.round(p[1] * 10000) / 10000; $("r-" + p[0]).value = v; $("n-" + p[0]).value = v;
+  });
+  $("lock").checked = S.lock;
+}
+function bindSize(key, id){
+  const r = $("r-" + id), n = $("n-" + id);
+  const apply = v => {
+    if (!(v > 0)) return;
+    if (S.lock) { S.W = S.H = S.D = v; syncSizeUI(); } else S[key] = v;
+    updateGeometry();
+  };
+  r.addEventListener("input", () => { n.value = r.value; apply(parseFloat(r.value)); });
+  n.addEventListener("input", () => { const v = parseFloat(n.value); if (v > 0){ r.value = v; apply(v); } });
+}
+
+/* ====================== ЭКСПОРТ ====================== */
+function saveBlob(blob, name){
+  const url = URL.createObjectURL(blob), a = document.createElement("a");
+  a.href = url; a.download = name; document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 4000);
+}
+function exportGLB(){
+  if (!mesh || !S.tex){ setStatus("Сначала загрузите картинку.", true); return; }
+  setStatus("Собираю GLB...");
+  let name = ($("fname").value || "cube").trim().replace(/[^\w\-а-яА-ЯёЁ ]+/g, "_") || "cube";
+  mesh.name = "Cube";
+  try{
+    new THREE.GLTFExporter().parse(mesh, function(res){
+      saveBlob(new Blob([res], { type: "application/octet-stream" }), name + ".glb");
+      setStatus("Файл " + name + ".glb сохранён.");
+    }, { binary: true });
+  }catch(e){ setStatus("Ошибка экспорта: " + (e.message || e), true); }
+}
+
+/* ====================== 3D-ПРОСМОТР ====================== */
+function initGL(){
+  const canvas = $("gl");
+  renderer = new THREE.WebGLRenderer({ canvas: canvas, antialias: true });
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+  renderer.outputEncoding = THREE.sRGBEncoding;
+  scene = new THREE.Scene(); scene.background = new THREE.Color($("bg").value);
+  camera = new THREE.PerspectiveCamera(40, 1, 0.05, 100);
+  resetView();
+  controls = new THREE.OrbitControls(camera, canvas);
+  controls.enableDamping = true; controls.autoRotateSpeed = 2.2; controls.minDistance = 2; controls.maxDistance = 20;
+
+  scene.add(new THREE.AmbientLight(0xffffff, 0.85));
+  const k = new THREE.DirectionalLight(0xffffff, 0.8); k.position.set(4, 6, 5); scene.add(k);
+  const r = new THREE.DirectionalLight(0xaab4ff, 0.4); r.position.set(-5, -2, -4); scene.add(r);
+
+  holder = new THREE.Group(); scene.add(holder);
+  mesh = new THREE.Mesh(new THREE.BufferGeometry(), new THREE.MeshBasicMaterial({ color: 0x888888 }));
+  holder.add(mesh);
+
+  const fit = () => {
+    const v = $("viewer"), w = Math.max(1, v.clientWidth), h = Math.max(1, v.clientHeight);
+    renderer.setSize(w, h, false); camera.aspect = w / h;
+    camera.updateProjectionMatrix();
+  };
+  if (window.ResizeObserver) new ResizeObserver(fit).observe($("viewer")); else window.addEventListener("resize", fit);
+  fit();
+  (function loop(){ requestAnimationFrame(loop); controls.update(); renderer.render(scene, camera); })();
+}
+function resetView(){
+  camera.position.set(3.3, 2.4, 4.2); camera.lookAt(0, 0, 0);
+  if (controls){ controls.target.set(0, 0, 0); controls.update(); }
+}
+
+/* ====================== ИНИЦИАЛИЗАЦИЯ ====================== */
+function init(){
+  const sel = $("layout");
+  Object.keys(LAYOUTS).forEach(k => { const o = document.createElement("option"); o.value = k; o.textContent = LAYOUTS[k].name; sel.appendChild(o); });
+  const rots = $("rots");
+  FACES.forEach(f => {
+    const w = document.createElement("div");
+    w.innerHTML = '<span class="lbl">' + FACE_RU[f] + '</span><select data-face="' + f + '"><option value="0">0°</option><option value="90">90°</option><option value="180">180°</option><option value="270">270°</option></select>';
+    rots.appendChild(w);
+  });
+  rots.addEventListener("change", e => { const f = e.target.getAttribute("data-face"); if (f){ S.rot[f] = parseInt(e.target.value, 10); updateGeometry(); } });
+
+  // ПРЕСЕТЫ РАЗМЕРОВ КУБА: ["Название", [Ширина, Высота, Глубина]] в метрах
+  [["Куб 1 м", [1, 1, 1]], ["Колонна 1×3×1", [1, 3, 1]], ["Плита 3×0.2×3", [3, 0.2, 3]], ["Блок 1×1×2", [1, 1, 2]], ["Куб 0.5 м", [0.5, 0.5, 0.5]]]
+    .forEach(p => {
+      const b = document.createElement("button"); b.textContent = p[0];
+      b.onclick = () => {
+        const m = UNIT_M[S.unit]; S.W = p[1][0] / m; S.H = p[1][1] / m; S.D = p[1][2] / m;
+        S.lock = (p[1][0] === p[1][1] && p[1][1] === p[1][2]); syncSizeUI(); updateGeometry();
+      };
+      $("presets").appendChild(b);
+    });
+
+  initGL();
+  rangeBounds(); syncSizeUI();
+
+  bindCut("cw", "cw"); bindCut("ch", "ch"); bindCut("inset", "in");
+  bindSize("W", "w"); bindSize("H", "h"); bindSize("D", "d");
+
+  setupCutEvents();
+
+  $("sq").onchange = e => {
+    S.square = e.target.checked;
+    if (S.square){ S.ch = S.cw; syncCutUI(); updateGeometry(); drawCut(); }
+  };
+  $("grid").onchange = e => { S.showGrid = e.target.checked; drawCut(); };
+  $("lock").onchange = e => { S.lock = e.target.checked; if (S.lock){ S.H = S.D = S.W; syncSizeUI(); updateGeometry(); } };
+  $("unit").onchange = e => {
+    const oldM = UNIT_M[S.unit], newM = UNIT_M[e.target.value];
+    S.unit = e.target.value; S.W = S.W * oldM / newM; S.H = S.H * oldM / newM; S.D = S.D * oldM / newM;
+    rangeBounds(); syncSizeUI(); updateGeometry();
+  };
+  $("pivot").onchange = e => { S.pivot = e.target.value; updateGeometry(); };
+  $("pixel").onchange = e => { S.pixel = e.target.checked; makeTexture(); makeMaterial(); };
+  $("unlit").onchange = e => { S.unlit = e.target.checked; makeMaterial(); };
+  $("alpha").onchange = e => { S.alpha = e.target.checked; makeMaterial(); };
+  $("bg").onchange = e => { scene.background = new THREE.Color(e.target.value); };
+  $("layout").onchange = e => {
+    S.layout = e.target.value;
+    if (S.isTest){ useTest(); } else { setCutRanges(); if (!autoDetect()) resetGrid(); syncCutUI(); updateGeometry(); drawCut(); }
+  };
+
+  $("btn-auto").onclick = () => {
+    if (autoDetect()){ updateGeometry(); drawCut(); setStatus("Начало развёртки определено. Размер грани не менялся — подгоните ползунками при необходимости."); }
+    else { resetGrid(); syncCutUI(); updateGeometry(); drawCut(); setStatus("Фон не найден — грани расставлены по сетке с текущим размером."); }
+  };
+  $("btn-whole").onclick = () => { resetGrid(); syncCutUI(); updateGeometry(); drawCut(); };
+  $("btn-test").onclick = useTest;
+  $("btn-template").onclick = () => {
+    makeTestCanvas(S.layout).toBlob(b => saveBlob(b, "cube_template_" + S.layout + ".png"), "image/png");
+  };
+  $("btn-glb").onclick = exportGLB;
+
+  $("btn-spin").onclick = () => {
+    controls.autoRotate = !controls.autoRotate;
+    $("btn-spin").textContent = "Вращение: " + (controls.autoRotate ? "вкл" : "выкл");
+  };
+  $("btn-reset").onclick = resetView;
+
+  $("file").addEventListener("change", e => { if (e.target.files[0]) loadFile(e.target.files[0]); e.target.value = ""; });
+  const drop = $("drop");
+  ["dragenter", "dragover"].forEach(ev => drop.addEventListener(ev, e => { e.preventDefault(); drop.classList.add("over"); }));
+  ["dragleave", "drop"].forEach(ev => drop.addEventListener(ev, e => { e.preventDefault(); drop.classList.remove("over"); }));
+  drop.addEventListener("drop", e => { if (e.dataTransfer.files[0]) loadFile(e.dataTransfer.files[0]); });
+  window.addEventListener("dragover", e => e.preventDefault());
+  window.addEventListener("drop", e => { e.preventDefault(); if (e.dataTransfer.files[0]) loadFile(e.dataTransfer.files[0]); });
+  window.addEventListener("paste", e => {
+    const it = [].slice.call((e.clipboardData && e.clipboardData.items) || []).find(i => /^image\//.test(i.type));
+    if (it) loadFile(it.getAsFile());
+  });
+
+  useTest();
+  setStatus("Готово. Нажимайте на грани на схеме и перетаскивайте.");
+}
+
+window.addEventListener("error", e => setStatus("Ошибка: " + (e.message || "скрипт"), true));
+if (!window.THREE) { document.body.innerHTML = '<p style="padding:20px">Three.js не загрузился. Нужен интернет — откройте страницу в Chrome, Safari или Edge.</p>'; }
+else if (!THREE.OrbitControls || !THREE.GLTFExporter) { document.body.innerHTML = '<p style="padding:20px">Модули Three.js не загрузились. Проверьте интернет и обновите страницу.</p>'; }
+else init();
+</script>
+</body>
+                                               </html>
